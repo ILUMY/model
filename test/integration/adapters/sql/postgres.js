@@ -12,18 +12,28 @@ var utils = require('utilities')
   , Account = require('../../../fixtures/account').Account
   , Team = require('../../../fixtures/team').Team
   , Membership = require('../../../fixtures/membership').Membership
+  , config = require('../../../config')
   , shared = require('../shared');
 
 tests = {
   'before': function (next) {
-    var sql;
+    var relations = [
+          'Zooby'
+        , 'User'
+        , 'Profile'
+        , 'Account'
+        , 'Membership'
+        , 'Team'
+        ]
+      , models = [];
 
-    adapter = new Adapter({
-      database: 'model_test'
-    });
+    adapter = new Adapter(config.postgres);
     adapter.once('connect', function () {
-      var sql = generator.createTable(['Zooby',
-          'User', 'Profile', 'Account', 'Membership', 'Team']);
+      var sql = '';
+
+      sql += generator.dropTable(relations);
+      sql += generator.createTable(relations);
+
       adapter.exec(sql, function (err, data) {
         if (err) {
           throw err;
@@ -33,15 +43,15 @@ tests = {
     });
     adapter.connect();
 
-    model.adapters = {
-      'Zooby': adapter
-    , 'User': adapter
-    , 'Profile': adapter
-    , 'Account': adapter
-    , 'Membership': adapter
-    , 'Team': adapter
-    };
+    model.adapters = {};
+    relations.forEach(function (r) {
+      model[r].adapter = adapter;
+      models.push({
+        ctorName: r
+      });
+    });
 
+    model.registerDefinitions(models);
   }
 
 , 'after': function (next) {
@@ -68,8 +78,8 @@ tests = {
 , 'test save new': function (next) {
     var u = User.create({
       login: 'asdf'
-    , password: 'zerb'
-    , confirmPassword: 'zerb'
+    , password: 'zerbzerb'
+    , confirmPassword: 'zerbzerb'
     });
     u.save(function (err, data) {
       if (err) {
@@ -113,12 +123,26 @@ for (var p in shared) {
 
 var eagerAssnTests = {
   'test includes eager-fetch of hasMany association': function (next) {
-    User.all({}, {includes: ['kids', 'avatars']}, function (err, data) {
+    User.all({}, {includes: ['kids', 'avatarProfiles']}, function (err, data) {
       data.forEach(function (u) {
         if (u.id == currentId) {
-          assert.equal(2, u.avatars.length);
+          assert.equal(2, u.avatarProfiles.length);
         }
       });
+      next();
+    });
+  }
+
+, 'test includes eager-fetch of belongsTo association': function (next) {
+    Profile.all({}, {includes: ['user']}, function (err, data) {
+      var foundUser = false;
+      data.forEach(function (p) {
+        // One of these dudes should have a user
+        if (p.user) {
+          foundUser = p.user;
+        }
+      });
+      assert.ok(foundUser);
       next();
     });
   }
@@ -126,7 +150,7 @@ var eagerAssnTests = {
 , 'test includes eager-fetch of hasMany with association sort': function (next) {
     User.all({}, {
         includes: ['kids'
-      , 'avatars'], sort: {'login': 'desc', 'kids.login': 'asc'}
+      , 'avatarProfiles'], sort: {'login': 'desc', 'kids.login': 'asc'}
     }, function (err, data) {
       assert.equal('zzzz', data[0].login);
       data.forEach(function (u) {
@@ -138,8 +162,16 @@ var eagerAssnTests = {
     });
   }
 
+, 'test includes eager-fetch of hasMany with `first` lookup for owner obj': function (next) {
+    User.first({login: 'asdf', password: 'zerb4'}, {includes: ['kids', 'avatarProfiles']},
+        function (err, data) {
+      assert.equal(2, data.kids.length);
+      next();
+    });
+  }
+
 , 'test hasMany through': function (next) {
-    User.first({login: 'asdf'}, function (err, data) {
+    User.first({login: 'asdf', password: 'zerb1'}, function (err, data) {
       if (err) {
         throw err;
       }

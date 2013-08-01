@@ -85,6 +85,25 @@ tests = {
     });
   }
 
+, 'test updateProperties without save does not affect datastore': function (next) {
+    Zooby.first({id: currentId}, {}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(data.id, currentId);
+      data.updateProperties({
+        foo: 'bdb'
+      });
+      Zooby.first({id: currentId}, {}, function (err, fetchData) {
+        if (err) {
+          throw err;
+        }
+        assert.notStrictEqual(data.foo, fetchData.foo);
+        next();
+      });
+    });
+  }
+
 , 'test save existing': function (next) {
     Zooby.first(currentId, {}, function (err, data) {
       if (err) {
@@ -174,6 +193,16 @@ tests = {
     });
   }
 
+, 'test all, by string with metacharacters equality': function (next) {
+    Zooby.all({foo: '.*'}, {nocase:true}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(0, data.length);
+      next();
+    });
+  }
+
 , 'test all, by string case-insensitive bool': function (next) {
     Zooby.all({foo:'BAR'}, {nocase: true}, function (err, data) {
       if (err) {
@@ -194,6 +223,36 @@ tests = {
     });
   }
 
+, 'test all, by string LIKE percent in front': function (next) {
+    Zooby.all({foo: {'like': '%AR'}}, {}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(data.length, 1);
+      next();
+    });
+  }
+
+, 'test all, by string LIKE percent in back': function (next) {
+    Zooby.all({foo: {'like': 'BA%'}}, {}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(data.length, 2);
+      next();
+    });
+  }
+
+, 'test all, by string LIKE percent front and back': function (next) {
+    Zooby.all({foo: {'like': '%A%'}}, {}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(data.length, 2);
+      next();
+    });
+  }
+
 , 'test all, by string LIKE case-insensitive bool': function (next) {
     Zooby.all({foo: {'like': 'b'}}, {nocase: true}, function (err, data) {
       if (err) {
@@ -206,6 +265,36 @@ tests = {
 
 , 'test all, by LIKE case-insensitive array': function (next) {
     Zooby.all({foo: {'like': 'b'}}, {nocase: ['foo']}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(data.length, 2);
+      next();
+    });
+  }
+
+, 'test all, by string LIKE case-insensitive percent in front': function (next) {
+    Zooby.all({foo: {'like': '%ar'}}, {nocase: true}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(data.length, 1);
+      next();
+    });
+  }
+
+, 'test all, by string LIKE case-insensitive percent in back': function (next) {
+    Zooby.all({foo: {'like': 'ba%'}}, {nocase: true}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      assert.equal(data.length, 2);
+      next();
+    });
+  }
+
+, 'test all, by string LIKE case-insensitive percent front and back': function (next) {
+    Zooby.all({foo: {'like': '%ba%'}}, {nocase: true}, function (err, data) {
       if (err) {
         throw err;
       }
@@ -386,17 +475,94 @@ tests = {
     });
   }
 
+, 'test reification of invalid model': function (next) {
+    var u = User.create({
+      login: 'asdf'
+      // Invalid model as confirmPassword should fail
+    });
+    u.save({force: true}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      currentId = u.id;
+
+      // Fetch the invalid model
+      User.first(currentId, {}, function (err, data) {
+        // Ensure that reification worked
+        assert.ok(typeof data.toObj === 'function');
+
+        // Since confirmPassword should only trigger on 'create', ensure that there were no errors
+        assert.ok(!err);
+
+        // Cleanup
+        User.remove(data.id, next);
+      });
+    });
+  }
+
+, 'test validations on reification': function (next) {
+    var u = User.create({
+      login: 'as' // Too short, will cause validation error on reify
+      // Invalid model as confirmPassword should fail
+    });
+    u.save({force: true}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      currentId = data.id;
+
+      // Fetch the invalid model
+      User.first(currentId, {}, function (err, data) {
+        // Ensure that reification worked
+        assert.ok(typeof data.toObj === 'function');
+
+        // Ensure that we get an error
+        assert.ok(typeof data.errors.login !== 'undefined');
+        assert.ok(typeof data.errors.password !== 'undefined');
+
+        // Cleanup
+        User.remove(data.id, next);
+      });
+    });
+  }
+
+, 'test validations on fetch with scenario': function (next) {
+    var u = User.create({
+      login: 'as' // Too short, will cause validation error on reify
+      // Invalid model as confirmPassword should fail
+    });
+    u.save({force: true}, function (err, data) {
+      if (err) {
+        throw err;
+      }
+      currentId = data.id;
+
+      // Fetch the invalid model
+      User.first(currentId, {scenario: 'update'}, function (err, data) {
+        // Ensure that reification worked
+        assert.ok(typeof data.toObj === 'function');
+
+        // Ensure that we get errors about the password, but not the login
+        assert.ok(!data.errors.login);
+        assert.ok(typeof data.errors.password !== 'undefined');
+
+        // Cleanup
+        User.remove(data.id, next);
+      });
+    });
+  }
+
 , 'test hasOne association': function (next) {
     var u = User.create({
       login: 'asdf'
-    , password: 'zerb'
-    , confirmPassword: 'zerb'
+    , password: 'zerb1'
+    , confirmPassword: 'zerb1'
     });
     u.save(function (err, data) {
       if (err) {
         throw err;
       }
-      currentId = u.id;
+      currentId = data.id;
       User.first(currentId, {}, function (err, data) {
         var user = data
           , profile;
@@ -406,14 +572,11 @@ tests = {
         profile = Profile.create({});
         user.setProfile(profile);
         user.save(function (err, data) {
-          if (err) {
-            throw err;
-          }
+          assert.ok(!err, err);
+
           user.getProfile(function (err, data) {
+            assert.ok(!err, err);
             assert.equal(profile.id, data.id);
-            if (err) {
-              throw err;
-            }
             next();
           });
         });
@@ -424,8 +587,8 @@ tests = {
 , 'test belongsTo association': function (next) {
     var u = User.create({
       login: 'asdf'
-    , password: 'zerb'
-    , confirmPassword: 'zerb'
+    , password: 'zerb2'
+    , confirmPassword: 'zerb2'
     });
     u.save(function (err, data) {
       if (err) {
@@ -459,8 +622,8 @@ tests = {
 , 'test hasMany association': function (next) {
     var u = User.create({
       login: 'asdf'
-    , password: 'zerb'
-    , confirmPassword: 'zerb'
+    , password: 'zerb3'
+    , confirmPassword: 'zerb3'
     });
     u.save(function (err, data) {
       if (err) {
@@ -494,8 +657,8 @@ tests = {
 , 'test named hasMany': function (next) {
     var u = User.create({
       login: 'asdf'
-    , password: 'zerb'
-    , confirmPassword: 'zerb'
+    , password: 'zerb4'
+    , confirmPassword: 'zerb4'
     });
     u.save(function (err, data) {
       if (err) {
@@ -510,13 +673,13 @@ tests = {
         }
         user.addKid(User.create({
           login: 'qwer'
-        , password: 'zerb'
-        , confirmPassword: 'zerb'
+        , password: 'zerb1'
+        , confirmPassword: 'zerb1'
         }));
         user.addKid(User.create({
           login: 'zxcv'
-        , password: 'zerb'
-        , confirmPassword: 'zerb'
+        , password: 'zerb2'
+        , confirmPassword: 'zerb2'
         }));
         user.save(function (err, data) {
           if (err) {
@@ -537,8 +700,8 @@ tests = {
 , 'test named hasMany with hasOne of same model': function (next) {
     var u = User.create({
       login: 'zzzz'
-    , password: 'zerb'
-    , confirmPassword: 'zerb'
+    , password: 'zerb5'
+    , confirmPassword: 'zerb5'
     });
     u.save(function (err, data) {
       if (err) {
@@ -554,17 +717,17 @@ tests = {
         user.setProfile(Profile.create({
           nickname: 'frang'
         }));
-        user.addAvatar(Profile.create({
+        user.addAvatarProfile(Profile.create({
           nickname: 'fffuuu'
         }));
-        user.addAvatar(Profile.create({
+        user.addAvatarProfile(Profile.create({
           nickname: 'derrrr'
         }));
         user.save(function (err, data) {
           if (err) {
             throw err;
           }
-          user.getAvatars(function (err, data) {
+          user.getAvatarProfiles(function (err, data) {
             if (err) {
               throw err;
             }
@@ -607,7 +770,7 @@ tests = {
         assert.equal(data.id, 'customid');
         next();
       });
-    } 
+    }
     else {
       throw new Error('model is not valid');
     }

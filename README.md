@@ -1,11 +1,19 @@
 Model
 ==============
 
-[![build status](https://secure.travis-ci.org/mde/model.png)](http://travis-ci.org/mde/model)
+[![Build Status](https://travis-ci.org/mde/model.png?branch=master)](https://travis-ci.org/mde/model)
 
 Model is a datastore-agnostic ORM in JavaScript. It serves as the
 model-component for the [Geddy MVC Web framework](http://geddyjs.org/) for
 NodeJS.
+
+## Overview
+
+Model currently implements adapters for:
+
+* Postgres
+* Riak
+* MongoDB
 
 ### License
 
@@ -23,13 +31,15 @@ build-tool.
 npm install model
 ```
 
-## Adapters
+### Hacking on Model: running tests
 
-Model currently implements adapters for:
+Run the tests with `jake test`. Run only unit tests with `jake test[unit]`.
 
-* Postgres
-* Riak
-* MongoDB
+The integration tests require mongo and postgres. To run the tests on a specific
+adapter, use `jake test[mongo]`, `jake test[postgres]`, or `jake test[memory]`.
+
+Configure adapter options by creating a `test/db.json` file. See
+`test/db.sample.json` for available options.
 
 ## Defining models
 
@@ -111,12 +121,77 @@ var params = {
 var user = User.create(params);
 ```
 
-## Validation and errors
+## Validations
 
-Data-validation happens on the call to `create`, and any validation errors show
-up inside an `errors` property on the instance, keyed by field name. Instances
-have an `isValid` method that returns a Boolean indicating whether the instance is
-valid.
+Validations provide a nice API for making sure your data items are in a good
+state. When an item is "valid," it means that its data meet all the criteria
+you've set for it. You can specify that certain fields have to be present, have
+to be certain length, or meet any other specific criteria you want to set.
+
+Here's a list of supported validation methods:
+
+ * validatesPresent -- ensures the property exists
+ * validatesAbsent -- ensures the property does not exist
+ * validatesLength -- ensures the minimum, maximum, or exact length
+ * validatesFormat -- validates using a passed-in regex
+ * validatesConfirmed -- validates a match against another named parameter
+ * validatesWithFunction -- uses an arbitrary function to validate
+
+#### Common options
+
+You can specify a custom error message for when a validation fails using the
+'message' option:
+
+```javascript
+var Zerb = function () {
+  this.property('name', 'string');
+  this.validatesLength('name', {is: 3, message: 'Try again, gotta be 3!'});
+};
+```
+
+You can decide when you want validations to run by passing the 'on' option.
+
+```javascript
+var User = function () {
+  this.property('name', 'string', {required: false});
+  this.property('password', 'string', {required: false});
+
+  this.validatesLength('name', {min: 3, on: ['create', 'update']});
+  this.validatesPresent('password', {on: 'create'});
+  this.validatesConfirmed('password', 'confirmPassword', {on: 'create'});
+};
+
+// Name validation will pass, but password will fail
+myUser = User.create({name: 'aaa'});
+
+```
+
+The default behavior is for validation on both 'create' and 'update':
+
+ * `create` - validates on <MyModelDefinition>`.create`
+ * `update` - validates on <myModelInstance>`.updateProperties`
+
+You can also define custom validation scenarios other than create and update.
+(There is a builtin custom 'reify' scenario which is uses when instantiating
+items out of your datastore. This happens on the `first` and `all` query
+methods.)
+
+```javascript
+// Force validation with the `reify` scenario, ignore the too-short name property
+myUser = User.create({name: 'aa'}, {scenario: 'reify'});
+
+// You can also specify a scenario with these methods:
+// Enforce 'create' validations on a fetch -- may result in invalid instances
+User.first(query, {scenario: 'create'}, cb);
+// Do some special validations you need for credit-card payment
+User.updateProperties(newAttrs, {scenario: 'creditCardPayment'});
+```
+
+### Validation errors
+
+Any validation errors show up inside an `errors` property on the instance, keyed
+by field name. Instances have an `isValid` method that returns a Boolean
+indicating whether the instance is valid.
 
 ```javascript
 // Leaving out the required password field
@@ -344,8 +419,8 @@ var Team = function () {
 };
 
 var Membership = function () {
-  this.hasMany('Memberships');
-  this.hasMany('Teams');
+  this.belongsTo('User');
+  this.belongsTo('Team');
 };
 ```
 
@@ -495,11 +570,16 @@ These OR and NOT queries can be nested and combined:
 {or: [{foo: {'like': 'b'}}, {foo: 'foo'}], not: {foo: 'baz'}}
 ```
 
-## Sorting
+## Options: sort, skip, limit
 
 The `all` API-call for querying accepts an optional options-object after the
-query-conditions. Set a 'sort' in that options-object to specifiy properties to
-sort on, and the sort-direction for each one.
+query-conditions for doing sorting, skipping to particular records (i.e., SQL
+OFFSET), and limiting the number of results returned.
+
+### Sorting
+
+Set a 'sort' in that options-object to specifiy properties to
+sort on, and the sort-direction for each one:
 
 ```javascript
 var users
@@ -516,7 +596,7 @@ User.all({updatedAt: {ne: null}}, {sort: {createdAt: 'asc', lastName: 'desc'}},
 });
 ```
 
-### Simplified syntax
+### Simplified syntax for sorting
 
 You can use a simplified syntax for specifying the sort. The default
 sort-direction is ascending ('asc'), so you can specify a property to sort on
@@ -528,6 +608,21 @@ sort-direction is ascending ('asc'), so you can specify a property to sort on
 // Sort by createdAt, then updatedAt, then lastName,
 // then firstName -- all ascending
 {sort: ['createdAt', 'updatedAt', 'lastName', 'firstName']}
+```
+
+### Skip and limit
+
+The 'skip' option allows you to return records beginning at a certain item
+number. Using 'limit' will return you only the desired number of items in your
+response. Using these options together allow you to implement pagination.
+
+Remember that both these option assume you have your items sorted in the
+desired order. If you don't sort your items before using these options, you'll
+end up with a random subset instead of the items you want.
+
+```javascript
+// Returns items 501-600
+{skip: 500, limit: 100}
 
 ```
 

@@ -9,20 +9,31 @@ var utils = require('utilities')
   , User = require('../../../fixtures/user').User
   , Profile = require('../../../fixtures/profile').Profile
   , Account = require('../../../fixtures/account').Account
+  , config = require('../../../config')
   , shared = require('../shared');
 
 tests = {
   'before': function (next) {
-    adapter = new Adapter({
-      dbname: 'model_test'
+    var relations = [
+          'Zooby'
+        , 'User'
+        , 'Profile'
+        , 'Account'
+        , 'Membership'
+        , 'Team'
+        ]
+      , models = [];
+    adapter = new Adapter(config.mongo);
+
+    model.adapters = {};
+    relations.forEach(function (r) {
+      model[r].adapter = adapter;
+      models.push({
+        ctorName: r
+      });
     });
 
-    model.adapters = {
-      'Zooby': adapter
-    , 'User': adapter
-    , 'Profile': adapter
-    , 'Account': adapter
-    };
+    model.registerDefinitions(models);
 
     adapter.dropTable(['Zooby', 'User'], next);
   }
@@ -34,8 +45,6 @@ tests = {
 , 'test create adapter': function () {
     assert.ok(adapter instanceof Adapter);
   }
-
-
 };
 
 for (var p in shared) {
